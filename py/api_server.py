@@ -66,6 +66,7 @@ class OpenOutpainterServingManager:
         self.requests = {}
         self.request_id = 0
         self.http_running = False
+        self.server_status = ""
         self.server = None
         self.thread = None
         self.comfy_progress_hook = None
@@ -94,17 +95,27 @@ class OpenOutpainterServingManager:
             set_progress_bar_global_hook(hook)
 
         if not self.http_running:
-            self.thread = threading.Thread(target=self.http_handler, daemon=True)
-            self.http_running = True
-            self.thread.start()
-            print(f"HTTP Server running on port {self.port}")
+            try:
+                self.thread = threading.Thread(target=self.http_handler, daemon=True)
+                self.http_running = True
+                self.thread.start()
+                self.server_status = f"Server is running on {self.server_address}:{self.port}"
+                print(f"OpenOutpaint API server running on port {self.port}")
+            except Exception as e:
+                self.http_running = False
+                self.server_status = "ERROR: Could not start OpenOutpaint API server: {}".format(e)
+                raise RuntimeError(self.server_status )
 
     def stop_server(self):
         for request in self.requests:
             request.finalize({})
-        self.server.shutdown()
-        self.thread.join()
-        print(f"HTTP Server stopped on port {self.port}")
+        if self.http_running:
+            self.http_running = False
+            self.server.shutdown()
+            self.server.server_close()
+            self.thread.join()
+            self.server_status = "Server not running"
+            print(f"OpenOutpaint API server stopped on port {self.port}")
 
     def http_handler(self):
         class RequestHandler(BaseHTTPRequestHandler):

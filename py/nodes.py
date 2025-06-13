@@ -63,10 +63,9 @@ class OpenOutpainterServing:
                 node_type=OpenOutpainterServing.CLASSNAME,
                 node_id=unique_id,
             )
-        server_status = "Server not running" if not oop_serving.http_running else f"Server is running on {server_address}:{oop_serving.port}"
 
         data = oop_serving.get_data(request_id=request_id)
-        return (data, server_status)
+        return (data, oop_serving.server_status)
 
 
 ########################
