@@ -97,8 +97,8 @@ class OpenOutpainterServingManager:
         if not self.http_running:
             try:
                 self.thread = threading.Thread(target=self.http_handler, daemon=True)
-                self.http_running = True
                 self.thread.start()
+                self.http_running = True
                 self.server_status = f"Server is running on {self.server_address}:{self.port}"
                 print(f"OpenOutpaint API server running on port {self.port}")
             except Exception as e:
@@ -111,9 +111,11 @@ class OpenOutpainterServingManager:
             request.finalize({})
         if self.http_running:
             self.http_running = False
-            self.server.shutdown()
-            self.server.server_close()
-            self.thread.join()
+            if self.server:
+                # server may have failed to start
+                self.server.shutdown()
+                self.server.server_close()
+                self.thread.join()
             self.server_status = "Server not running"
             print(f"OpenOutpaint API server stopped on port {self.port}")
 
