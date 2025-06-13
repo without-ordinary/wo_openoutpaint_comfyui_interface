@@ -1,0 +1,19 @@
+[project]
+name = "openoutpaint_comfyui_interface"
+version = "0.0.1"
+description = "An API interface for OpenOutpaint to work with ComfyUI workflows"
+authors = [{name = "Without Ordinary", email = "without-ordinary@users.noreply.github.com"}]
+readme = "README.md"
+license = {text = "GNU General Public License v3"}
+classifiers = []
+dependencies = ["opencv-python"]
+
+[project.urls]
+bugs = "https://github.com/without-ordinary/openoutpaint_comfyui_interface/issues"
+homepage = "https://github.com/without-ordinary/openoutpaint_comfyui_interface"
+
+[tool.comfy]
+PublisherId = "without-ordinary"
+DisplayName = "OpenOutpaint ComfyUI Interface"
+Icon = ""
+
