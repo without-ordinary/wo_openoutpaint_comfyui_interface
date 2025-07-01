@@ -1,6 +1,6 @@
 [project]
 name = "openoutpaint_comfyui_interface"
-version = "0.0.1"
+version = "0.0.2"
 description = "An API interface for OpenOutpaint to work with ComfyUI workflows"
 authors = [{name = "Without Ordinary", email = "without-ordinary@users.noreply.github.com"}]
 readme = "README.md"
