@@ -62,3 +62,23 @@ def preview_to_base64(image):
     image.save(img_bytes, format="JPEG", quality=80)
     base64_image = base64.b64encode(img_bytes.getvalue()).decode('utf-8')
     return base64_image
+
+import json
+def print_list_or_dic(header_str, data, test_json = False):
+    output = ""
+    output += f"\n========== {header_str}: start ==========\n"
+    for key, value in enumerate(data) if type(data) is list else data.items():
+        if key in ["images", "image", "mask", "init_images"]:
+            truncated_value = str(value)[:30]
+        else:
+            truncated_value = str(value)[:500]
+        output += f">    ({type(value)}) {key}: {truncated_value}\n"
+
+    if test_json:
+        try:
+            j = json.dumps(data).encode('utf-8')
+        except Exception as e:
+            output += f"ERROR: {e}\ndata: <{type(data)}> {data}\n"
+
+    output += f"========== {header_str}: end ==========\n"
+    print(output)

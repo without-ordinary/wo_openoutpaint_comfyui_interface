@@ -6,8 +6,9 @@ import json
 from server import PromptServer
 from comfy.utils import ProgressBar, set_progress_bar_global_hook
 from comfy_execution.graph import ExecutionBlocker
-from .utils import preview_to_base64
+from .utils import preview_to_base64, print_list_or_dic
 
+SPAMMY_DEBUG = False
 
 # API POST endpoints that are handled by nodes
 class POSTPATHS:
@@ -15,12 +16,14 @@ class POSTPATHS:
     PATH_INTERROGATE = '/sdapi/v1/interrogate'
     PATH_TXT2IMG = '/sdapi/v1/txt2img'
     PATH_IMG2IMG = '/sdapi/v1/img2img'
+    PATH_OPTIONS = '/sdapi/v1/options/'
 
 VALID_POST_PATHS = [
     POSTPATHS.PATH_UPSCALE,
     POSTPATHS.PATH_INTERROGATE,
     POSTPATHS.PATH_TXT2IMG,
     POSTPATHS.PATH_IMG2IMG,
+    POSTPATHS.PATH_OPTIONS,
 ]
 
 class ProgressData:
@@ -140,13 +143,27 @@ class OpenOutpainterServingManager:
                 if not self2.path in VALID_POST_PATHS:
                     self2.send_response(404)
                     self2.send_header('Content-type', 'application/json')
+                    self2.cors_headers()
                     self2.end_headers()
                     self2.wfile.write(json.dumps({"error": "Command not found"}).encode('utf-8'))
+                    return
+
+                # /sdapi/v1/options/ POST just needs to be told everything is ok
+                if self2.path == POSTPATHS.PATH_OPTIONS:
+                    self2.send_response(200)
+                    self2.send_header('Content-type', 'application/json')
+                    self2.cors_headers()
+                    self2.end_headers()
+                    self2.wfile.write(json.dumps({"status": "Whatever that was, it worked. Stop complaining. :O"}).encode('utf-8'))
                     return
 
                 content_length = int(self2.headers['Content-Length'])
                 post_data = self2.rfile.read(content_length)
                 data = json.loads(post_data.decode('utf-8'))
+
+                # debug request
+                if SPAMMY_DEBUG:
+                    print_list_or_dic(f"do_POST ({self2.path})", data)
 
                 request = OpenOutpainterRequest(self.request_id, data, self2.path)
                 self.requests[self.request_id] = request
@@ -168,12 +185,7 @@ class OpenOutpainterServingManager:
 
                 self2.send_response(200)
                 self2.send_header('Content-type', 'application/json')
-                # Cors
-                if (self.enable_cross_origin_requests):
-                    self2.send_header('Access-Control-Allow-Origin', '*')
-                    self2.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
-                    self2.send_header('Access-Control-Allow-Headers', '*')
-
+                self2.cors_headers()
                 self2.end_headers()
                 self2.wfile.write(json.dumps(response).encode('utf-8'))
 
@@ -188,26 +200,30 @@ class OpenOutpainterServingManager:
             def do_GET(self2):
                 response = self.process_get_request(self2.path)
 
+                # debug response
+                if SPAMMY_DEBUG:
+                    print_list_or_dic(f"do_GET ({self2.path})", response, True)
+
                 # unsupported command
                 if not response:
                     self2.send_response(404)
                     self2.send_header('Content-type', 'application/json')
-                    if self.enable_cross_origin_requests:
-                        self2.send_header('Access-Control-Allow-Origin', '*')
-                        self2.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
-                        self2.send_header('Access-Control-Allow-Headers', '*')
+                    self2.cors_headers()
                     self2.end_headers()
                     self2.wfile.write(json.dumps({"error": "Command not found"}).encode('utf-8'))
                     return
 
                 self2.send_response(200)
                 self2.send_header('Content-type', 'application/json')
-                if self.enable_cross_origin_requests:
+                self2.cors_headers()
+                self2.end_headers()
+                self2.wfile.write(json.dumps(response).encode('utf-8'))
+
+            def cors_headers(self2):
+                if (self.enable_cross_origin_requests):
                     self2.send_header('Access-Control-Allow-Origin', '*')
                     self2.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
                     self2.send_header('Access-Control-Allow-Headers', '*')
-                self2.end_headers()
-                self2.wfile.write(json.dumps(response).encode('utf-8'))
 
         self.server = ThreadingHTTPServer((self.server_address, self.port), RequestHandler)
         self.server.serve_forever()
@@ -228,6 +244,8 @@ class OpenOutpainterServingManager:
     def process_get_request(self, url):
         url = urlparse(url)
         path = url.path
+
+        print(f"process_get_request: {path}")
 
         match path:
             case '/startup-events':
@@ -312,15 +330,24 @@ class OpenOutpainterServingManager:
             case '/sdapi/v1/samplers':
                 # return list of samplers, can just be dummy option and config this within workflow
                 # only "name" is used
-                return web.json_response([
+                return [
                     {"name": "Configure sampler in workflow"},
-                ])
+                ]
 
             case '/sdapi/v1/schedulers':
                 # return list of schedulers, can just be dummy option and config this within workflow
                 # only "name" and "label" are used
                 return [
                     {"name": "automatic", "label": "Automatic"},
+                ]
+
+            case '/sdapi/v1/prompt-styles':
+                # return list of A1111 prompt-styles
+                # These are passed by as a multiple selected list by name for txt2img and img2img in "styles"
+                # only "name" is used, but the prompts are displayed in the tooltip for each
+                # {"name": "", "prompt": "", "negative_prompt":""},
+                return [
+                    # TODO: add support for this
                 ]
 
             ########################
