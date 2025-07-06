@@ -1,4 +1,5 @@
 import json
+import re
 from comfy_execution.graph import ExecutionBlocker
 from .utils import get_category, base64_to_image, base64_to_mask, image_to_base64, images_to_base64
 from .api_server import POSTPATHS, OpenOutpainterServingManager
@@ -6,6 +7,8 @@ from .api_server import POSTPATHS, OpenOutpainterServingManager
 
 # global server manager
 # current does not support more than a single active API workflow
+# multiple serving nodes also unsupported be behavior unknown
+# TODO: possibly add support for that
 oop_serving = OpenOutpainterServingManager()
 
 
@@ -31,6 +34,10 @@ class OpenOutpainterServing:
                 "enable_cross_origin_requests": ("BOOLEAN", {"default": False}),
                 "request_id": ("INT", {"default": -1, "min": -1, "max": 1125899906842624}),
             },
+            "optional": {
+                "oop_styles": ("OOP_STYLES", {}),
+                "oop_models": ("OOP_MODELS", {}),
+            },
             "hidden": {"unique_id": "UNIQUE_ID"},
         }
 
@@ -38,12 +45,32 @@ class OpenOutpainterServing:
     RETURN_NAMES = ("oop_request", "Server status")
     FUNCTION = "serve"
 
+    # run this node every execution, it is speshul.
     @classmethod
     def IS_CHANGED(cls, **kwargs):
         return float("NaN")
 
-    def serve(self, run_server, server_address, port, enable_cross_origin_requests, request_id, unique_id):
+    def serve(
+        self, run_server, server_address, port, enable_cross_origin_requests, request_id, unique_id,
+        oop_styles = None, oop_models = None,
+    ):
         print(f"{self.NAME} start - unique_id: {unique_id}")
+
+        # store styles to respond to API request for this list
+        oop_serving.oop_styles = oop_styles or {}
+        print(f"oop_styles: {oop_styles}")
+
+        # store models for API requests
+        if oop_models:
+            oop_serving.oop_models = oop_models
+            # handle currently selected model in oop ui no longer being available
+            if oop_serving.oop_selected_model not in oop_models:
+                oop_serving.oop_selected_model = oop_models[0]
+        else:
+            # if not models are defined, use the placeholder
+            oop_serving.oop_models = ["Placeholder_Checkpoint_Name"]
+            oop_serving.oop_selected_model = "Placeholder_Checkpoint_Name"
+        print(f"oop_models: {oop_models}")
 
         # server settings changed, restart
         if oop_serving.http_running and (
@@ -64,8 +91,15 @@ class OpenOutpainterServing:
                 node_id=unique_id,
             )
 
-        data = oop_serving.get_data(request_id=request_id)
-        return (data, oop_serving.server_status)
+        oop_request = oop_serving.get_data(request_id)
+
+        if oop_request is None:
+            oop_request = ExecutionBlocker(None)
+        else:
+            oop_request.extra_data["oop_styles"] = oop_styles
+            oop_request.extra_data["oop_models"] = oop_models # not currently used
+
+        return (oop_request, oop_serving.server_status)
 
 
 ########################
@@ -547,9 +581,195 @@ class OpenOutpainterServingOutputIMG2IMG:
         return {}
 
 
-########################
+######################
+#     Style Nodes    #
+######################
+# "Prompt Styles" is an A1111 feature where it adds saved prompts to the current prompt.
+# In OOP, it functions as multi-select list below the prompts.
+# This opens it up to creative uses outside of the indented use,
+# though that use can still be use if implemented in the workflow.
+
+class OpenOutpainterServingStyleDefine:
+    CLASSNAME = "OpenOutpainterServingStyleDefineV1"
+    NAME = "OpenOutpainter Serving Style Define"
+    CATEGORY = get_category()
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "style_name":       ("STRING", {"multiline": False, "default": ""}),
+                "prompt":           ("STRING", {"multiline": True, "default": ""}),
+                "negative_prompt":  ("STRING", {"multiline": True, "default": ""}),
+            },
+            "optional": {
+                "oop_styles": ("OOP_STYLES", {}),
+            }
+        }
+
+    OUTPUTS = {
+        "oop_styles": "OOP_STYLES",
+    }
+    RETURN_TYPES = tuple(OUTPUTS.values())
+    RETURN_NAMES = tuple(OUTPUTS.keys())
+    FUNCTION = "out"
+
+    def out(self, style_name, prompt, negative_prompt, oop_styles = None):
+        if oop_styles is None: oop_styles = {}
+        # will overwrite previous styles of the same name
+        oop_styles[style_name] = {
+            "name": style_name,
+            "prompt": prompt,
+            "negative_prompt": negative_prompt,
+        }
+        return (oop_styles,)
 
 
+class OpenOutpainterServingStyleGet:
+    CLASSNAME = "OpenOutpainterServingStyleGetV1"
+    NAME = "OpenOutpainter Serving Style Get"
+    CATEGORY = get_category()
+
+    @classmethod
+    def INPUT_TYPES(s):
+        return {
+            "required": {
+                "oop_request": ("OOP_REQUEST", {}),
+                "style_name": ("STRING", {"multiline": False, "default": ""}),
+                "empty_strings_on_false": ("BOOLEAN", {"default": True, "tooltip": "Otherwise blocks execution on the prompt outputs."}),
+            },
+        }
+
+    OUTPUTS = {
+        "oop_request_if_true": "OOP_REQUEST",
+        "oop_request_if_false": "OOP_REQUEST",
+        "boolean": "BOOLEAN",
+        "prompt": "STRING",
+        "negative_prompt": "STRING",
+    }
+    RETURN_TYPES = tuple(OUTPUTS.values())
+    RETURN_NAMES = tuple(OUTPUTS.keys())
+    FUNCTION = "out"
+
+    def out(self, oop_request, style_name, empty_strings_on_false):
+        request_data = oop_request.request_data
+        if "styles" not in request_data:
+            return (
+                ExecutionBlocker(None), # oop_request_if_true
+                ExecutionBlocker(None), # oop_request_if_false
+                False, # boolean
+                "" if empty_strings_on_false else ExecutionBlocker(None), # prompt
+                "" if empty_strings_on_false else ExecutionBlocker(None), # negative_prompt
+            )
+        styles = request_data["styles"]
+        oop_styles = oop_request.extra_data["oop_styles"]
+        if style_name in styles and style_name in oop_styles:
+            return (
+                oop_request, # oop_request_if_true
+                ExecutionBlocker(None), # oop_request_if_false
+                True, # boolean
+                oop_styles[style_name]["prompt"], # prompt
+                oop_styles[style_name]["negative_prompt"], # negative_prompt
+            )
+        else:
+            return (
+                ExecutionBlocker(None), # oop_request_if_true
+                oop_request, # oop_request_if_false
+                False, # boolean
+                "" if empty_strings_on_false else ExecutionBlocker(None), # prompt
+                "" if empty_strings_on_false else ExecutionBlocker(None), # negative_prompt
+            )
+
+
+######################
+#     Model Nodes    #
+######################
+# Model selection from OOP occurs on a separate API from image gen because A1111 always has a model loaded
+# and its changed via its own api call. So some things with how this is handled are funky to deal with that.
+
+class OpenOutpainterServingModelDefine:
+    CLASSNAME = "OpenOutpainterServingModelDefineV1"
+    NAME = "OpenOutpainter Serving Model Define"
+    CATEGORY = get_category()
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "model_names": ("STRING", {"multiline": True, "default": ""}),
+            },
+            "optional": {
+                "oop_models": ("OOP_MODELS", {}),
+            }
+        }
+
+    OUTPUTS = {
+        "oop_models": "OOP_MODELS",
+    }
+    RETURN_TYPES = tuple(OUTPUTS.values())
+    RETURN_NAMES = tuple(OUTPUTS.keys())
+    FUNCTION = "out"
+
+    def out(self, model_names, oop_models = None):
+        if oop_models is None: oop_models = []
+        oop_models.extend(x for x in model_names.splitlines() if x not in oop_models)
+        return (oop_models,)
+
+
+class OpenOutpainterServingStyleSwitch:
+    CLASSNAME = "OpenOutpainterServingModelSwitchV1"
+    NAME = "OpenOutpainter Serving Model Switch"
+    CATEGORY = get_category()
+
+    @classmethod
+    def INPUT_TYPES(s):
+        return {
+            "required": {
+                "oop_request":      ("OOP_REQUEST", {}),
+                "model_name":       ("STRING", {"multiline": False, "default": ""}),
+                "use_regex":        ("BOOLEAN", {"default": False, "tooltip": "Use model_name input as regex pattern instead of exact string match. Use (?aiLmsux) format for flags, eg. (?i)pattern for ignore case."}),
+                "output_model_name_on_no_match": ("BOOLEAN", {"default": True, "tooltip": "Otherwise blocks execution on the model_name output."}),
+            },
+        }
+
+    OUTPUTS = {
+        "oop_request_if_true": "OOP_REQUEST",
+        "oop_request_if_false": "OOP_REQUEST",
+        "boolean": "BOOLEAN",
+        "selected_model": "STRING",
+    }
+    RETURN_TYPES = tuple(OUTPUTS.values())
+    RETURN_NAMES = tuple(OUTPUTS.keys())
+    FUNCTION = "out"
+
+    def out(self, oop_request, model_name, use_regex, output_model_name_on_no_match):
+        test = bool(model_name == oop_request.oop_selected_model)
+        if use_regex:
+            try:
+                match = re.search(model_name, oop_request.oop_selected_model)
+                test = match is not None
+            except re.error:
+                test = False
+        if test:
+            return (
+                oop_request, # oop_request_if_true
+                ExecutionBlocker(None), # oop_request_if_false
+                True, # boolean
+                oop_request.oop_selected_model, # selected_model
+            )
+        else:
+            return (
+                ExecutionBlocker(None), # oop_request_if_true
+                oop_request, # oop_request_if_false
+                False, # boolean
+                oop_request.oop_selected_model if output_model_name_on_no_match else ExecutionBlocker(None), # selected_model
+            )
+
+
+#########################
+#     Register Nodes    #
+#########################
+# I'm lazy and don't want to define a bunch of duplicate data in separate file to register nodes.
 
 def register_nodes(node_class_mappings=None, node_display_name_mappings=None):
     if node_display_name_mappings is None:
@@ -571,6 +791,12 @@ def register_nodes(node_class_mappings=None, node_display_name_mappings=None):
 
         OpenOutpainterServingInputIMG2IMG,
         OpenOutpainterServingOutputIMG2IMG,
+
+        OpenOutpainterServingStyleDefine,
+        OpenOutpainterServingStyleGet,
+
+        OpenOutpainterServingModelDefine,
+        OpenOutpainterServingStyleSwitch,
     ]
 
     for node_class in node_classes:

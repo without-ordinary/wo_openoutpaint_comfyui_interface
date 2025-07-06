@@ -5,7 +5,6 @@ from aiohttp import web
 import json
 from server import PromptServer
 from comfy.utils import ProgressBar, set_progress_bar_global_hook
-from comfy_execution.graph import ExecutionBlocker
 from .utils import preview_to_base64, print_list_or_dic
 
 SPAMMY_DEBUG = False
@@ -40,10 +39,14 @@ class ProgressData:
 
 
 class OpenOutpainterRequest:
-    def __init__(self, request_id, request_data, path):
+    def __init__(self, request_id, request_data, path, oop_selected_model):
         self.id = request_id
         self.request_data = request_data
+        self.extra_data = {}
         self.path = path
+        # set oop_selected_model here as what it was at the time of the request is the true value
+        # would be better if the api request contained this instead, but here we are
+        self.oop_selected_model = oop_selected_model
         self.output_ready = threading.Event()
         self.output = None
 
@@ -67,13 +70,19 @@ class OpenOutpainterServingManager:
         self.node_type = None
         self.node_id = None
         self.requests = {}
-        self.request_id = 0
+        self.request_id = 0 # next request id
         self.http_running = False
         self.server_status = ""
         self.server = None
         self.thread = None
         self.comfy_progress_hook = None
         self.progress = ProgressData()
+        self.oop_styles = {}
+        self.oop_models = []
+        # store the currently selected model from oop ui
+        # we wouldn't care about this if it was part of the gen request, but its not
+        # so we need save this to use later
+        self.oop_selected_model = ""
 
 
     def start_server(self, server_address, port, enable_cross_origin_requests, node_type, node_id):
@@ -148,14 +157,6 @@ class OpenOutpainterServingManager:
                     self2.wfile.write(json.dumps({"error": "Command not found"}).encode('utf-8'))
                     return
 
-                # /sdapi/v1/options/ POST just needs to be told everything is ok
-                if self2.path == POSTPATHS.PATH_OPTIONS:
-                    self2.send_response(200)
-                    self2.send_header('Content-type', 'application/json')
-                    self2.cors_headers()
-                    self2.end_headers()
-                    self2.wfile.write(json.dumps({"status": "Whatever that was, it worked. Stop complaining. :O"}).encode('utf-8'))
-                    return
 
                 content_length = int(self2.headers['Content-Length'])
                 post_data = self2.rfile.read(content_length)
@@ -165,7 +166,18 @@ class OpenOutpainterServingManager:
                 if SPAMMY_DEBUG:
                     print_list_or_dic(f"do_POST ({self2.path})", data)
 
-                request = OpenOutpainterRequest(self.request_id, data, self2.path)
+                # /sdapi/v1/options/ POST just needs to be told everything is ok
+                if self2.path == POSTPATHS.PATH_OPTIONS:
+                    if "sd_model_checkpoint" in data:
+                        self.oop_selected_model = data["sd_model_checkpoint"]
+                    self2.send_response(200)
+                    self2.send_header('Content-type', 'application/json')
+                    self2.cors_headers()
+                    self2.end_headers()
+                    self2.wfile.write(json.dumps({"status": "Whatever that was, it worked. Stop complaining. :O"}).encode('utf-8'))
+                    return
+
+                request = OpenOutpainterRequest(self.request_id, data, self2.path, self.oop_selected_model)
                 self.requests[self.request_id] = request
                 self.request_id += 1
 
@@ -239,7 +251,7 @@ class OpenOutpainterServingManager:
 
     def get_data(self, request_id):
         print(f"get_data: start r:{request_id}")
-        return self.requests.get(request_id, ExecutionBlocker(None))
+        return self.requests.get(request_id, None)
 
     def process_get_request(self, url):
         url = urlparse(url)
@@ -295,8 +307,8 @@ class OpenOutpainterServingManager:
                 # `inpainting_mask_weight` is set to 1.0
                 return {
                     "status": "ok",
-                    "sd_model_checkpoint": "Placeholder_Checkpoint_Name",
-                    "sd_checkpoint_hash": "69",
+                    "sd_model_checkpoint": self.oop_selected_model,
+                    "sd_checkpoint_hash": self.oop_selected_model,
                     "img2img_color_correction": False,
                     "inpainting_mask_weight": 1.0,
                 }
@@ -313,12 +325,19 @@ class OpenOutpainterServingManager:
                 # return list of checkpoints, can just be dummy option and config this within workflow
                 # only "title" and "sha256", the hash is only used for selecting the current returned from options
                 # oop gets happy if the title contains "inpainting"
-                return [
-                    {
-                        "title": "Placeholder_Checkpoint_Name",
-                        "sha256": "69",
-                    },
-                ]
+                # [
+                #     {
+                #         "title": "Placeholder_Checkpoint_Name",
+                #         "sha256": "69",
+                #     },
+                # ]
+                output = []
+                for model_name in self.oop_models:
+                    output.append({
+                        "title": model_name,
+                        "sha256": model_name, # fun fact, this doesn't actually have to be a hash
+                    })
+                return output
 
             case '/sdapi/v1/loras':
                 # return list of loras, can be empty and config this within workflow
@@ -346,9 +365,7 @@ class OpenOutpainterServingManager:
                 # These are passed by as a multiple selected list by name for txt2img and img2img in "styles"
                 # only "name" is used, but the prompts are displayed in the tooltip for each
                 # {"name": "", "prompt": "", "negative_prompt":""},
-                return [
-                    # TODO: add support for this
-                ]
+                return list(self.oop_styles.values())
 
             ########################
             # Extensions Functions #
