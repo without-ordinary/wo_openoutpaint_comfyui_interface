@@ -38,7 +38,7 @@ class OpenOutpainterServingModelDefine:
         return (oop_models,)
 
 
-class OpenOutpainterServingStyleSwitch:
+class OpenOutpainterServingModelSwitch:
     CLASSNAME = "OpenOutpainterServingModelSwitchV1"
     NAME = "OpenOutpainter Serving Model Switch"
     CATEGORY = get_category()
@@ -96,6 +96,6 @@ class OpenOutpainterServingStyleSwitch:
 def get_nodes():
     return [
         OpenOutpainterServingModelDefine,
-        OpenOutpainterServingStyleSwitch,
+        OpenOutpainterServingModelSwitch,
     ]
 
