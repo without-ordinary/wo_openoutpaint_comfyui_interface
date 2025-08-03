@@ -101,9 +101,9 @@ class OpenOutpainterServingManager:
         # this is actually a similar limitation the original A1111 implementation has
         if not self.comfy_progress_hook:
             self.comfy_progress_hook = ProgressBar(1).hook
-            def hook(value, total, preview_image):
+            def hook(value, total, preview_image, **kwargs):
                 self.progress.set(value, total, preview_image)
-                self.comfy_progress_hook(value, total, preview_image)
+                self.comfy_progress_hook(value, total, preview_image, kwargs)
             set_progress_bar_global_hook(hook)
 
         if not self.http_running:
@@ -119,7 +119,8 @@ class OpenOutpainterServingManager:
                 raise RuntimeError(self.server_status )
 
     def stop_server(self):
-        for request in self.requests:
+        for request_id, request in self.requests.items():
+            print(f"OpenOutpaint API server stop_server, canceling request_id: {request_id} request: {request}")
             request.finalize({})
         if self.http_running:
             self.http_running = False
