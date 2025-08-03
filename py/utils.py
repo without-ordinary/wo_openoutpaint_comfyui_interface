@@ -59,7 +59,7 @@ def images_to_base64(images):
 
 def preview_to_base64(image):
     img_bytes = BytesIO()
-    image.save(img_bytes, format="JPEG", quality=80)
+    image.save(img_bytes, format="PNG", quality=95)
     base64_image = base64.b64encode(img_bytes.getvalue()).decode('utf-8')
     return base64_image
 
