@@ -1,13 +1,14 @@
+import math
 import threading
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
-from aiohttp import web
 import json
+import time
 from server import PromptServer
 from comfy.utils import ProgressBar, set_progress_bar_global_hook
+from typing_extensions import override
+from comfy_execution.progress import ProgressHandler, NodeProgressState, PreviewImageTuple, add_progress_handler, get_progress_state
 from .utils import preview_to_base64, print_list_or_dic
-
-SPAMMY_DEBUG = False
 
 # API POST endpoints that are handled by nodes
 class POSTPATHS:
@@ -27,15 +28,74 @@ VALID_POST_PATHS = [
 
 class ProgressData:
     def __init__(self):
-        self.current = 0
-        self.total = 1
         self.preview_image = None
+        self.start_time = None
 
-    def set(self, current, total, preview_image):
-        self.current = current
-        self.total = total
+    def store_preview_image(self, preview_image):
         if preview_image is not None:
             self.preview_image = preview_image
+
+    def get_progress(self, skip_current_image):
+        nodes = get_progress_state().nodes
+        progress_value = 0
+        progress_max = 0
+        for node_id, state in nodes.items():
+            progress_value =+ state["value"]
+            progress_max =+ state["max"]
+
+        current_image = None
+        if self.preview_image is not None and not skip_current_image:
+            image = self.preview_image[1]
+            current_image = preview_to_base64(image)
+
+        progress = 0
+        eta = 0
+        if self.start_time is not None and progress_value > 0:
+            progress = progress_value / progress_max
+            eta = ((time.time() - self.start_time) / progress_value) * (progress_max - progress_value)
+        print(f"========== get_progress progress: {progress}  {progress_value}/{progress_max}  eta: {eta}")
+
+        return progress, current_image, eta
+
+    def reset(self):
+        self.preview_image = None
+        self.start_time = None
+
+class OpenOutpainterProgressHandler(ProgressHandler):
+    """
+    Handler that stores progress to reply to OpenOutpainter's requires for progress.
+    """
+
+    def __init__(self, progress: ProgressData):
+        super().__init__("openoutpainter")
+        self.progress = progress
+        self.progress.reset()
+
+    @override
+    def start_handler(self, node_id: str, state: NodeProgressState, prompt_id: str):
+        if self.progress.start_time is None:
+            self.progress.start_time = time.time()
+        pass
+
+    @override
+    def update_handler(
+        self,
+        node_id: str,
+        value: float,
+        max_value: float,
+        state: NodeProgressState,
+        prompt_id: str,
+        image: PreviewImageTuple | None = None,
+    ):
+        self.progress.store_preview_image(image)
+
+    @override
+    def finish_handler(self, node_id: str, state: NodeProgressState, prompt_id: str):
+        pass
+
+    @override
+    def reset(self):
+        self.progress.reset()
 
 
 class OpenOutpainterRequest:
@@ -83,28 +143,17 @@ class OpenOutpainterServingManager:
         # we wouldn't care about this if it was part of the gen request, but its not
         # so we need save this to use later
         self.oop_selected_model = ""
+        self.spammy_debug = False
 
 
-    def start_server(self, server_address, port, enable_cross_origin_requests, node_type, node_id):
+    def start_server(self, server_address, port, enable_cross_origin_requests, node_type, node_id, spammy_debug = False):
         # server config from workflow
         self.server_address = server_address
         self.port = port
         self.enable_cross_origin_requests = enable_cross_origin_requests
         self.node_type = node_type
         self.node_id = node_id
-
-        # this is probably a bad way to do this, not sorry :)
-        # inject ourselves in to the global progress hook
-        # since there does not seem to be any way to do this exactly how we need
-        # ideal we would only get the progress of prompt on our workflow webui
-        # but this works fine if there are no other concurrent sources of comfyUI queues
-        # this is actually a similar limitation the original A1111 implementation has
-        if not self.comfy_progress_hook:
-            self.comfy_progress_hook = ProgressBar(1).hook
-            def hook(value, total, preview_image, **kwargs):
-                self.progress.set(value, total, preview_image)
-                self.comfy_progress_hook(value, total, preview_image, kwargs)
-            set_progress_bar_global_hook(hook)
+        self.spammy_debug = spammy_debug
 
         if not self.http_running:
             try:
@@ -147,7 +196,7 @@ class OpenOutpainterServingManager:
                 return
 
             def do_POST(self2):
-                print(f"Received POST request: {self2.path}")
+                print(f"OpenOutpaint Received POST request: {self2.path}")
 
                 # unsupported command
                 if not self2.path in VALID_POST_PATHS:
@@ -164,7 +213,7 @@ class OpenOutpainterServingManager:
                 data = json.loads(post_data.decode('utf-8'))
 
                 # debug request
-                if SPAMMY_DEBUG:
+                if self.spammy_debug:
                     print_list_or_dic(f"do_POST ({self2.path})", data)
 
                 # /sdapi/v1/options/ POST just needs to be told everything is ok
@@ -205,16 +254,13 @@ class OpenOutpainterServingManager:
                 # clean up
                 del self.requests[request.id]
 
-                # reset progress
-                self.progress.set(0,1,None)
-
-                print("do_POST finished")
+                print("OpenOutpaint do_POST finished")
 
             def do_GET(self2):
                 response = self.process_get_request(self2.path)
 
                 # debug response
-                if SPAMMY_DEBUG:
+                if self.spammy_debug:
                     print_list_or_dic(f"do_GET ({self2.path})", response, True)
 
                 # unsupported command
@@ -254,6 +300,9 @@ class OpenOutpainterServingManager:
         print(f"get_data: start r:{request_id}")
         return self.requests.get(request_id, None)
 
+    def add_progress_handler(self):
+        add_progress_handler(OpenOutpainterProgressHandler(self.progress))
+
     def process_get_request(self, url):
         url = urlparse(url)
         path = url.path
@@ -277,22 +326,18 @@ class OpenOutpainterServingManager:
                 # request: skip_current_image: false = return latent preview
                 # response: see notes below
 
-                progress = self.progress.current/self.progress.total
-
                 query = parse_qs(url.query)
                 skip_current_image = query.get('skip_current_image', 'false')
                 if isinstance(skip_current_image, list):
                     skip_current_image = skip_current_image[0]
                 skip_current_image = str(skip_current_image).lower() != 'false'
 
-                current_image = None
-                if self.progress.preview_image is not None and not skip_current_image:
-                    current_image = preview_to_base64(self.progress.preview_image[1])
+                progress, current_image, eta = self.progress.get_progress(skip_current_image)
 
                 return {
                     "progress": progress, # float
-                    "eta_relative": 0.0, # No idea how feasible this would be to implement
-                    "current_image": current_image, # latent preview as a base64 encoded jpeg
+                    "eta_relative": eta, # estimated time remaining in seconds
+                    "current_image": current_image, # latent preview as a base64 encoded png
                 }
 
             case '/sdapi/v1/options':

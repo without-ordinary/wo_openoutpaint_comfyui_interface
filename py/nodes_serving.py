@@ -31,6 +31,7 @@ class OpenOutpainterServing:
                 "port": ("INT", {"default": 7860, "min": 1, "max": 65535}),
                 "enable_cross_origin_requests": ("BOOLEAN", {"default": False}),
                 "request_id": ("INT", {"default": -1, "min": -1, "max": 1125899906842624}),
+                "spammy_debug": ("BOOLEAN", {"default": False}),
             },
             "optional": {
                 "oop_styles": ("OOP_STYLES", {}),
@@ -49,10 +50,14 @@ class OpenOutpainterServing:
         return float("NaN")
 
     def serve(
-        self, run_server, server_address, port, enable_cross_origin_requests, request_id, unique_id,
+        self, run_server, server_address, port, enable_cross_origin_requests, request_id, spammy_debug,
+        unique_id,
         oop_styles = None, oop_models = None,
     ):
         print(f"{self.NAME} start - unique_id: {unique_id}")
+
+        # add progress handler each run
+        oop_serving.add_progress_handler()
 
         # store styles to respond to API request for this list
         oop_serving.oop_styles = oop_styles or {}
@@ -75,7 +80,8 @@ class OpenOutpainterServing:
             not run_server or
             oop_serving.server_address != server_address or
             oop_serving.port != port or
-            oop_serving.enable_cross_origin_requests != enable_cross_origin_requests
+            oop_serving.enable_cross_origin_requests != enable_cross_origin_requests or
+            oop_serving.spammy_debug != spammy_debug
         ):
             oop_serving.stop_server()
 
@@ -87,6 +93,7 @@ class OpenOutpainterServing:
                 enable_cross_origin_requests=enable_cross_origin_requests,
                 node_type=OpenOutpainterServing.CLASSNAME,
                 node_id=unique_id,
+                spammy_debug=spammy_debug,
             )
 
         oop_request = oop_serving.get_data(request_id)
