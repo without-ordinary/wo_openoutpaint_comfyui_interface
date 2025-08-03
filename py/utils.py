@@ -7,11 +7,11 @@ import cv2
 
 CATEGORYNAMESPACE = 'OpenOutpaint-Serving'
 
-def get_category(sub_dirs = None):
-    if sub_dirs is None:
+def get_category(sub_dir = None):
+    if sub_dir is None:
         return CATEGORYNAMESPACE
     else:
-        return "{}/utils".format(CATEGORYNAMESPACE)
+        return f"{CATEGORYNAMESPACE}/{sub_dir}"
 
 def _strip_prefix(s: str, prefix: str) -> str:
     if s.startswith(prefix):
