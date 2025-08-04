@@ -26,6 +26,7 @@ VALID_POST_PATHS = [
     POSTPATHS.PATH_OPTIONS,
 ]
 
+
 class ProgressData:
     def __init__(self):
         self.preview_image = None
@@ -36,36 +37,29 @@ class ProgressData:
             self.preview_image = preview_image
 
     def get_progress(self, skip_current_image):
-        nodes = get_progress_state().nodes
         progress_value = 0
         progress_max = 0
+        nodes = get_progress_state().nodes
         for node_id, state in nodes.items():
             progress_value =+ state["value"]
             progress_max =+ state["max"]
-
         current_image = None
-        if self.preview_image is not None and not skip_current_image:
-            image = self.preview_image[1]
-            current_image = preview_to_base64(image)
-
         progress = 0
         eta = 0
         if self.start_time is not None and progress_value > 0:
+            if progress_value > 0 and self.preview_image is not None and not skip_current_image:
+                current_image = preview_to_base64(self.preview_image[1])
             progress = progress_value / progress_max
             eta = ((time.time() - self.start_time) / progress_value) * (progress_max - progress_value)
-        print(f"========== get_progress progress: {progress}  {progress_value}/{progress_max}  eta: {eta}")
-
         return progress, current_image, eta
 
     def reset(self):
         self.preview_image = None
         self.start_time = None
 
-class OpenOutpainterProgressHandler(ProgressHandler):
-    """
-    Handler that stores progress to reply to OpenOutpainter's requires for progress.
-    """
 
+# Handler to get progress from ComfyUI
+class OpenOutpainterProgressHandler(ProgressHandler):
     def __init__(self, progress: ProgressData):
         super().__init__("openoutpainter")
         self.progress = progress
@@ -231,8 +225,10 @@ class OpenOutpainterServingManager:
                 # waits here till workflow finished running
                 # if workflow errors, just manually run workflow again with same req id to complete API request
                 request.output_ready.wait()
-
                 request.output_ready.clear()
+
+                # reset progress
+                self.progress.reset()
 
                 response = request.output
 
