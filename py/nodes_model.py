@@ -65,10 +65,11 @@ class OpenOutpainterServingModelSwitch:
     FUNCTION = "out"
 
     def out(self, oop_request, model_name, use_regex, output_model_name_on_no_match):
-        test = bool(model_name == oop_request.oop_selected_model)
+        selected_checkpoint = oop_request.request_data.get('checkpoint', "")
+        test = bool(model_name == selected_checkpoint)
         if use_regex:
             try:
-                match = re.search(model_name, oop_request.oop_selected_model)
+                match = re.search(model_name, selected_checkpoint)
                 test = match is not None
             except re.error:
                 test = False
@@ -77,14 +78,14 @@ class OpenOutpainterServingModelSwitch:
                 oop_request, # oop_request_if_true
                 ExecutionBlocker(None), # oop_request_if_false
                 True, # boolean
-                oop_request.oop_selected_model, # selected_model
+                selected_checkpoint, # selected_model
             )
         else:
             return (
                 ExecutionBlocker(None), # oop_request_if_true
                 oop_request, # oop_request_if_false
                 False, # boolean
-                oop_request.oop_selected_model if output_model_name_on_no_match else ExecutionBlocker(None), # selected_model
+                selected_checkpoint if output_model_name_on_no_match else ExecutionBlocker(None), # selected_model
             )
 
 

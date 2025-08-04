@@ -64,15 +64,7 @@ class OpenOutpainterServing:
         print(f"oop_styles: {oop_styles}")
 
         # store models for API requests
-        if oop_models:
-            oop_serving.oop_models = oop_models
-            # handle currently selected model in oop ui no longer being available
-            if oop_serving.oop_selected_model not in oop_models:
-                oop_serving.oop_selected_model = oop_models[0]
-        else:
-            # if not models are defined, use the placeholder
-            oop_serving.oop_models = ["Placeholder_Checkpoint_Name"]
-            oop_serving.oop_selected_model = "Placeholder_Checkpoint_Name"
+        oop_serving.oop_models = oop_models or ["Placeholder_Checkpoint_Name"]
         print(f"oop_models: {oop_models}")
 
         # server settings changed, restart
