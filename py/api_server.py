@@ -135,7 +135,7 @@ class OpenOutpainterServingManager:
         self.comfy_progress_hook = None
         self.progress = ProgressData()
         self.oop_styles = {}
-        self.oop_models = []
+        self.oop_checkpoints = []
         self.spammy_debug = False
 
 
@@ -369,7 +369,7 @@ class OpenOutpainterServingManager:
                 #     },
                 # ]
                 output = []
-                for model_name in self.oop_models:
+                for model_name in self.oop_checkpoints:
                     output.append({
                         "title": model_name,
                         "sha256": model_name, # fun fact, this doesn't actually have to be a hash

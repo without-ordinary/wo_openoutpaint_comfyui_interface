@@ -35,7 +35,7 @@ class OpenOutpainterServing:
             },
             "optional": {
                 "oop_styles": ("OOP_STYLES", {}),
-                "oop_models": ("OOP_MODELS", {}),
+                "oop_checkpoints": ("OOP_CHECKPOINTS", {}),
             },
             "hidden": {"unique_id": "UNIQUE_ID"},
         }
@@ -52,7 +52,7 @@ class OpenOutpainterServing:
     def serve(
         self, run_server, server_address, port, enable_cross_origin_requests, request_id, spammy_debug,
         unique_id,
-        oop_styles = None, oop_models = None,
+        oop_styles = None, oop_checkpoints = None,
     ):
         print(f"{self.NAME} start - unique_id: {unique_id}")
 
@@ -64,8 +64,8 @@ class OpenOutpainterServing:
         print(f"oop_styles: {oop_styles}")
 
         # store models for API requests
-        oop_serving.oop_models = oop_models or ["Placeholder_Checkpoint_Name"]
-        print(f"oop_models: {oop_models}")
+        oop_serving.oop_checkpoints = oop_checkpoints or ["Placeholder_Checkpoint_Name"]
+        print(f"oop_checkpoints: {oop_checkpoints}")
 
         # server settings changed, restart
         if oop_serving.http_running and (
@@ -94,7 +94,7 @@ class OpenOutpainterServing:
             oop_request = ExecutionBlocker(None)
         else:
             oop_request.extra_data["oop_styles"] = oop_styles
-            oop_request.extra_data["oop_models"] = oop_models # not currently used
+            oop_request.extra_data["oop_checkpoints"] = oop_checkpoints # not currently used
 
         return (oop_request, oop_serving.server_status)
 

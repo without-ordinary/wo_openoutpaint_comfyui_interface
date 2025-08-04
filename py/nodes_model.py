@@ -6,41 +6,41 @@ from .utils import get_category
 ######################
 #     Model Nodes    #
 ######################
-# Model selection from OOP occurs on a separate API from image gen because A1111 always has a model loaded
-# and its changed via its own api call. So some things with how this is handled are funky to deal with that.
+
+# "Model" in classnames is legacy from before rename to "Checkpoints"
 
 class OpenOutpainterServingModelDefine:
     CLASSNAME = "OpenOutpainterServingModelDefineV1"
-    NAME = "OpenOutpainter Serving Model Define"
+    NAME = "OpenOutpainter Serving Checkpoints List"
     CATEGORY = get_category()
 
     @classmethod
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "model_names": ("STRING", {"multiline": True, "default": ""}),
+                "checkpoint_names": ("STRING", {"multiline": True, "default": ""}),
             },
             "optional": {
-                "oop_models": ("OOP_MODELS", {}),
+                "oop_checkpoints": ("OOP_CHECKPOINTS", {}),
             }
         }
 
     OUTPUTS = {
-        "oop_models": "OOP_MODELS",
+        "oop_checkpoints": "OOP_CHECKPOINTS",
     }
     RETURN_TYPES = tuple(OUTPUTS.values())
     RETURN_NAMES = tuple(OUTPUTS.keys())
     FUNCTION = "out"
 
-    def out(self, model_names, oop_models = None):
-        if oop_models is None: oop_models = []
-        oop_models.extend(x for x in model_names.splitlines() if x not in oop_models)
-        return (oop_models,)
+    def out(self, checkpoint_names, oop_checkpoints = None):
+        if oop_checkpoints is None: oop_checkpoints = []
+        oop_checkpoints.extend(x for x in checkpoint_names.splitlines() if x not in oop_checkpoints)
+        return (oop_checkpoints,)
 
 
 class OpenOutpainterServingModelSwitch:
     CLASSNAME = "OpenOutpainterServingModelSwitchV1"
-    NAME = "OpenOutpainter Serving Model Switch"
+    NAME = "OpenOutpainter Serving Checkpoint Switch"
     CATEGORY = get_category()
 
     @classmethod
@@ -48,9 +48,9 @@ class OpenOutpainterServingModelSwitch:
         return {
             "required": {
                 "oop_request":      ("OOP_REQUEST", {}),
-                "model_name":       ("STRING", {"multiline": False, "default": ""}),
+                "checkpoint_name":  ("STRING", {"multiline": False, "default": ""}),
                 "use_regex":        ("BOOLEAN", {"default": False, "tooltip": "Use model_name input as regex pattern instead of exact string match. Use (?aiLmsux) format for flags, eg. (?i)pattern for ignore case."}),
-                "output_model_name_on_no_match": ("BOOLEAN", {"default": True, "tooltip": "Otherwise blocks execution on the model_name output."}),
+                "output_checkpoint_name_on_no_match": ("BOOLEAN", {"default": True, "tooltip": "Otherwise blocks execution on the model_name output."}),
             },
         }
 
@@ -64,12 +64,12 @@ class OpenOutpainterServingModelSwitch:
     RETURN_NAMES = tuple(OUTPUTS.keys())
     FUNCTION = "out"
 
-    def out(self, oop_request, model_name, use_regex, output_model_name_on_no_match):
+    def out(self, oop_request, checkpoint_name, use_regex, output_checkpoint_name_on_no_match):
         selected_checkpoint = oop_request.request_data.get('checkpoint', "")
-        test = bool(model_name == selected_checkpoint)
+        test = bool(checkpoint_name == selected_checkpoint)
         if use_regex:
             try:
-                match = re.search(model_name, selected_checkpoint)
+                match = re.search(checkpoint_name, selected_checkpoint)
                 test = match is not None
             except re.error:
                 test = False
@@ -85,7 +85,7 @@ class OpenOutpainterServingModelSwitch:
                 ExecutionBlocker(None), # oop_request_if_true
                 oop_request, # oop_request_if_false
                 False, # boolean
-                selected_checkpoint if output_model_name_on_no_match else ExecutionBlocker(None), # selected_model
+                selected_checkpoint if output_checkpoint_name_on_no_match else ExecutionBlocker(None), # selected_model
             )
 
 
