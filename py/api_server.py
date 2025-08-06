@@ -155,9 +155,7 @@ class OpenOutpainterServingManager:
                 raise RuntimeError(self.server_status )
 
     def stop_server(self):
-        for request_id, request in self.requests.items():
-            print(f"OpenOutpaint API server stop_server, canceling request_id: {request_id} request: {request}")
-            request.finalize({})
+        self.cancel_open_requests()
         if self.http_running:
             self.http_running = False
             if self.server:
@@ -167,6 +165,11 @@ class OpenOutpainterServingManager:
                 self.thread.join()
             self.server_status = "Server not running"
             print(f"OpenOutpaint API server stopped on port {self.port}")
+
+    def cancel_open_requests(self):
+        for request_id, request in self.requests.items():
+            print(f"OpenOutpaint API server, canceling request_id: {request_id} request: {request}")
+            request.finalize({})
 
     def http_handler(self):
         class RequestHandler(BaseHTTPRequestHandler):
@@ -306,7 +309,9 @@ class OpenOutpainterServingManager:
                 # cancel running gen
                 # not yet implemented
                 # ComfyUI doesn't respond super well to stopping anyway
-                return {"hello": "ok"}
+                # but just forcing anything in the queue to finish clears stuck jobs due to workflow error
+                self.cancel_open_requests()
+                return {"status": "(LIE) Yup, we totally canceled that job."}
 
             case '/sdapi/v1/progress':
                 # get progress of current running gen
