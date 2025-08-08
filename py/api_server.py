@@ -167,7 +167,9 @@ class OpenOutpainterServingManager:
             print(f"OpenOutpaint API server stopped on port {self.port}")
 
     def cancel_open_requests(self):
-        for request_id, request in self.requests.items():
+        # iterate over a copy of keys instead as requests dict can change during this process
+        for request_id in self.requests.keys():
+            request = self.requests[request_id]
             print(f"OpenOutpaint API server, canceling request_id: {request_id} request: {request}")
             request.finalize({})
 
