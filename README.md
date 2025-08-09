@@ -4,6 +4,8 @@ An API interface for OpenOutpaint to work with ComfyUI workflows.
 
 > NOTICE: This project is extremely cursed. You probably shouldn't do things like this does. :D
 
+This now requires my fork of [openOutpaint](https://github.com/without-ordinary/wo_openOutpaint). This readme needs a lot of work still.
+
 ## Quickstart
 
 1. Install this to ComfyUI (If you don't know how to do that, you really should not be touching this cursed abomination.)
