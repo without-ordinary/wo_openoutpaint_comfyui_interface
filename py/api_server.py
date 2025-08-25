@@ -365,22 +365,10 @@ class OpenOutpainterServingManager:
                 ]
 
             case '/sdapi/v1/sd-models':
-                # return list of checkpoints, can just be dummy option and config this within workflow
-                # only "title" and "sha256", the hash is only used for selecting the current returned from options
-                # oop gets happy if the title contains "inpainting"
-                # [
-                #     {
-                #         "title": "Placeholder_Checkpoint_Name",
-                #         "sha256": "69",
-                #     },
-                # ]
-                output = []
-                for model_name in self.oop_checkpoints:
-                    output.append({
-                        "title": model_name,
-                        "sha256": model_name, # fun fact, this doesn't actually have to be a hash
-                    })
-                return output
+                # return list of checkpoints
+                # Previously this returned an A1111 styled list of models,
+                # but that isn't required anymore, just need a simple list now
+                return self.oop_checkpoints
 
             case '/sdapi/v1/loras':
                 # return list of loras, can be empty and config this within workflow
