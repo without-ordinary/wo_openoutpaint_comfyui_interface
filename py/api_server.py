@@ -9,6 +9,7 @@ from comfy.utils import ProgressBar, set_progress_bar_global_hook
 from typing_extensions import override
 from comfy_execution.progress import ProgressHandler, NodeProgressState, PreviewImageTuple, add_progress_handler, get_progress_state
 from .utils import preview_to_base64, print_list_or_dic
+import nodes
 
 # API POST endpoints that are handled by nodes
 class POSTPATHS:
@@ -172,6 +173,8 @@ class OpenOutpainterServingManager:
             request = self.requests[request_id]
             print(f"OpenOutpaint API server, canceling request_id: {request_id} request: {request}")
             request.finalize({})
+        PromptServer.instance.prompt_queue.wipe_queue()
+        nodes.interrupt_processing()
 
     def http_handler(self):
         class RequestHandler(BaseHTTPRequestHandler):
