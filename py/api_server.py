@@ -360,8 +360,7 @@ class OpenOutpainterServingManager:
                 # return list of upscalers, can just be dummy option and config this within workflow
                 # only "name" is required
                 return [
-                    {"name": "None"},  # can be excluded, is ignored by oop
-                    {"name": "Lanczos"},
+                    "[WIP] Use Workflow",
                 ]
 
             case '/sdapi/v1/sd-models':
